@@ -1,10 +1,10 @@
 package com.greenbit.taulmool
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -16,14 +16,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -33,10 +39,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.greenbit.taulmool.ui.theme.TaulMoolTheme
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+
+// Helper function for input filtering
+fun filterDecimalInput(input: String): String {
+    // Allow only digits and one decimal point
+    val filtered = input.filterIndexed { i, c ->
+        c.isDigit() || (c == '.' && input.indexOf('.') == i)
+    }
+    // Only one decimal point allowed
+    val parts = filtered.split('.')
+    return if (parts.size > 2) parts[0] + "." + parts[1] else filtered
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,37 +70,64 @@ fun ShopCalculatorScreen(
     viewModel: ShopCalculatorViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var isPressed by remember { mutableStateOf(false) }
     var isExpanded by remember { mutableStateOf(false) }
 
-    val buttonScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
-        animationSpec = tween(100),
-        label = "buttonScale"
+    // Scale animation state for result
+    var shouldScale by remember { mutableStateOf(false) }
+    var lastResult by remember { mutableStateOf("") }
+    val scaleAnim by animateFloatAsState(
+        targetValue = if (shouldScale) 1.2f else 1f,
+        animationSpec = tween(durationMillis = 500), // scale up in 0.5s
+        label = "scaleAnim"
     )
 
-    val buttonColor by animateColorAsState(
-        targetValue = if (isPressed) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                     else MaterialTheme.colorScheme.primary,
-        animationSpec = tween(100),
-        label = "buttonColor"
-    )
+    // Detect result change and trigger scale animation
+    LaunchedEffect(uiState.result) {
+        if (uiState.result.isNotEmpty() && uiState.result != lastResult) {
+            shouldScale = true
+            lastResult = uiState.result
+            delay(2000)
+            shouldScale = false
+        }
+    }
 
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "TaulMool - Shop Calculator",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
+            Surface(
+                shadowElevation = 8.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding(),
+                color = Color.Transparent
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.primary)
+                        .padding(vertical = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ShoppingCart,
+                            contentDescription = "Shop Icon",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "KiranaTool - Shop Calculator",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                }
+            }
         }
     ) { paddingValues ->
         Column(
@@ -111,14 +152,13 @@ fun ShopCalculatorScreen(
                 ) {
                     Text(
                         text = "Quick Price Calculator",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Help customers get quick answers!",
-                        fontSize = 14.sp,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center
                     )
@@ -128,10 +168,10 @@ fun ShopCalculatorScreen(
             // Price per unit input
             OutlinedTextField(
                 value = uiState.pricePerUnit,
-                onValueChange = viewModel::updatePricePerUnit,
+                onValueChange = { viewModel.updatePricePerUnit(filterDecimalInput(it)) },
                 label = { Text("Price per Kg/Unit (₹)", color = MaterialTheme.colorScheme.onSurface) },
                 placeholder = { Text("e.g., 40") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next), // Set IME action to Next
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -220,10 +260,16 @@ fun ShopCalculatorScreen(
                 CalculationType.QUANTITY_TO_PRICE -> {
                     OutlinedTextField(
                         value = uiState.quantity,
-                        onValueChange = viewModel::updateQuantity,
+                        onValueChange = {
+                            val filtered = filterDecimalInput(it)
+                            viewModel.updateQuantity(filtered)
+                            if (filtered.isNotEmpty() && filtered != ".") {
+                                viewModel.calculate()
+                            }
+                        },
                         label = { Text("Quantity (Kg)", color = MaterialTheme.colorScheme.onSurface) },
                         placeholder = { Text("e.g., 5") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -235,10 +281,16 @@ fun ShopCalculatorScreen(
                 CalculationType.PRICE_TO_QUANTITY -> {
                     OutlinedTextField(
                         value = uiState.totalAmount,
-                        onValueChange = viewModel::updateTotalAmount,
+                        onValueChange = {
+                            val filtered = filterDecimalInput(it)
+                            viewModel.updateTotalAmount(filtered)
+                            if (filtered.isNotEmpty() && filtered != ".") {
+                                viewModel.calculate()
+                            }
+                        },
                         label = { Text("Total Amount (₹)", color = MaterialTheme.colorScheme.onSurface) },
                         placeholder = { Text("e.g., 100") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -249,72 +301,63 @@ fun ShopCalculatorScreen(
                 }
             }
 
-            // Calculate button with animation
-            Button(
-                onClick = {
-                    isPressed = true
-                    viewModel.calculate()
-                    // Reset animation after short delay
-                     CoroutineScope(Dispatchers.Main).launch {
-                         delay(150)
-                        isPressed = false
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .scale(buttonScale),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = buttonColor,
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(12.dp),
-                enabled = !uiState.isCalculating
-            ) {
-                if (uiState.isCalculating) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text(
-                        text = "Calculate",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
 
             // Clear button
             OutlinedButton(
                 onClick = viewModel::clearAll,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.primary
+                    containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
+                    contentColor = MaterialTheme.colorScheme.error
                 ),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(16.dp)
             ) {
-                Text("Clear All", fontWeight = FontWeight.Medium)
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = "Clear All",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Clear All", style = MaterialTheme.typography.labelLarge)
             }
 
             // Result display
             if (uiState.result.isNotEmpty()) {
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                        containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)
                     ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    border = CardDefaults.outlinedCardBorder()
                 ) {
-                    Text(
-                        text = uiState.result,
-                        modifier = Modifier.padding(16.dp),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.CheckCircle,
+                            contentDescription = "Result",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = uiState.result,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
 
@@ -361,6 +404,35 @@ fun ShopCalculatorScreen(
                         )
                     }
                 }
+            }
+            // Share button at the bottom
+            val context = LocalContext.current
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(
+                onClick = {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, "Check out KiranaTool Shop Calculator: https://play.google.com/store/apps/details?id=com.greenbit.taulmool")
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, "Share App via"))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF81D4FA),
+                    contentColor = Color.Black
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Share,
+                    contentDescription = "Share App",
+                    tint = Color.Black,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Share App", fontWeight = FontWeight.Bold)
             }
         }
     }
